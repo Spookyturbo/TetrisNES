@@ -210,6 +210,8 @@ void gameloop() {
   int i = 0;
   int row;
   int col;
+  struct Tetrimino tet = {0, 0, 0, 5, 0};
+  
   
   //Initialize the playfield
   for(row = 0; row < 20; row++) {
@@ -223,13 +225,22 @@ void gameloop() {
   setLevel(20);
   setLevelPal(0);
   while(1) {
+    struct Tetrimino tet2 = {0, 0, 0, 1, 2};
+    struct Tetrimino tet3 = {0, 0, 3, 2, 1};
     int sprid = 0;
+  
+    if(i > 48) {
+      //tet.row++;
+      if(tet.row == 18)
+        lockTetrimino(&tet);
+      if(tet.row > 18)
+        tet.row = 0;
+      i = 0;
+    }
     //int x = 64 + (Tetriminos[0][0][3][0] << 3); //multiply by 8
     //int y = 48 + (Tetriminos[0][0][3][1] << 3);
     //sprid = oam_spr(x, y, 0x80, 0, sprid);
-    struct Tetrimino tet = {0, 0, 0, 5, 0};
-    struct Tetrimino tet2 = {0, 0, 0, 1, 2};
-    struct Tetrimino tet3 = {0, 0, 3, 2, 1};
+    
     sprid = drawTetrimino(&tet, sprid);
     sprid = drawTetrimino(&tet2, sprid);
     sprid = drawTetrimino(&tet3, sprid);
@@ -237,6 +248,7 @@ void gameloop() {
     
     oam_hide_rest(sprid);
     vrambuf_flush();
+    i++;
   }
 }
 
@@ -291,7 +303,10 @@ uint8 drawTetrimino(struct Tetrimino* tet, uint8 sprid) {
   //There are 2 fake rows above row 0 for spawning
   int block;
   int centerX = 64 + (tet->col << 3); //Multiplying by 8
-  int centerY = 48 + (tet->row << 3);
+  
+  //I don't really know why this is 47 to line up with the
+  //nametable, but it is
+  int centerY = 47 + (tet->row << 3);
   
   for(block = 0; block < 4; block++) {
     int8 xoffset = Tetriminos[tet->id][tet->rotation][block][0];
@@ -356,5 +371,21 @@ void setLevelPal(uint8 level) {
 
 //Takes a tetrimino
 void lockTetrimino(struct Tetrimino* tet) {
-  int t = tet->id;
+  int block;
+  int originX = 8;
+  int originY = 6;
+  
+  for(block = 0; block < 4; block++) {
+    //Row and col of this block
+    int row = tet->col + Tetriminos[tet->id][tet->rotation][block][0];
+    int col = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
+    
+    //set it in the playfield
+    playfield[row][col] = tet->color;
+    
+    //Draw single byte to the nametable
+    VRAMBUF_PUT(NTADR_A(originX + row, originY + col), 1, NT_UPD_HORZ);
+    VRAMBUF_ADD(0x83 + tet->color);
+    vrambuf_end();
+  }
 }
