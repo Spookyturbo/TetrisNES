@@ -22,8 +22,11 @@ void setLevel(int level);
 void setScore(long score);
 
 //Color is the offset used in the chr table to choose the sprite
-uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid, uint8 color);
+uint8 drawTetrimino(struct Tetrimino* tet, uint8 sprid);
 uint8 displayNextTetrimino(uint8 id, uint8 sprid, uint8 color);
+
+//Using the given tetrimino, lock it into the background
+void lockTetrimino(struct Tetrimino* tet);
 
 //Const and defines
 
@@ -167,6 +170,15 @@ const uint8 LEVEL_PAL[10][4] = {
   {0x0F, 0x27, 0x16, 0x30}
 };
 
+//Some stuff
+struct Tetrimino {
+  uint8 id;
+  uint8 rotation;
+  uint8 row;
+  uint8 col;
+  uint8 color;
+};
+
 //Globals
 
 //Access as [row][col]
@@ -196,6 +208,15 @@ void main(void) {
 
 void gameloop() {
   int i = 0;
+  int row;
+  int col;
+  
+  //Initialize the playfield
+  for(row = 0; row < 20; row++) {
+    for(col = 0; col < 10; col++) {
+      playfield[row][col] = -1; 
+    }
+  }
   
   //Just tests for now
   setScore(23456);
@@ -206,10 +227,12 @@ void gameloop() {
     //int x = 64 + (Tetriminos[0][0][3][0] << 3); //multiply by 8
     //int y = 48 + (Tetriminos[0][0][3][1] << 3);
     //sprid = oam_spr(x, y, 0x80, 0, sprid);
-    
-    sprid = drawTetrimino(0, 0, 0, 5, sprid, 0);
-    sprid = drawTetrimino(0, 0, 0, 1, sprid, 1);
-    sprid = drawTetrimino(0, 0, 3, 1, sprid, 2);
+    struct Tetrimino tet = {0, 0, 0, 5, 0};
+    struct Tetrimino tet2 = {0, 0, 0, 1, 2};
+    struct Tetrimino tet3 = {0, 0, 3, 2, 1};
+    sprid = drawTetrimino(&tet, sprid);
+    sprid = drawTetrimino(&tet2, sprid);
+    sprid = drawTetrimino(&tet3, sprid);
     sprid = displayNextTetrimino(O_TETRIMINO, sprid, 0);
     
     oam_hide_rest(sprid);
@@ -264,29 +287,29 @@ void setScore(long score) {
 
 //The row and col are for the tetris play field, not pixels
 //Color is a number 0-2
-uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid, uint8 color) {
+uint8 drawTetrimino(struct Tetrimino* tet, uint8 sprid) {
   //There are 2 fake rows above row 0 for spawning
   int block;
-  int centerX = 64 + (col << 3); //Multiplying by 8
-  int centerY = 48 + (row << 3);
+  int centerX = 64 + (tet->col << 3); //Multiplying by 8
+  int centerY = 48 + (tet->row << 3);
   
   for(block = 0; block < 4; block++) {
-    int8 xoffset = Tetriminos[id][rotation][block][0];
-    int8 yoffset = Tetriminos[id][rotation][block][1];
+    int8 xoffset = Tetriminos[tet->id][tet->rotation][block][0];
+    int8 yoffset = Tetriminos[tet->id][tet->rotation][block][1];
     int x;
     int y;
     
     //Not checking for other conditions because this is the only one that
     //should ever happen, and I would prefer to see the error so it is obvious
     //then hide it
-    if((yoffset + (int8)row) < 0)
+    if((yoffset + (int8)tet->row) < 0)
       continue;
     
     x = centerX + (xoffset << 3); //multiply by 8
     y = centerY + (yoffset << 3);
     
   
-    sprid = oam_spr(x, y, 0x83 + color, 0, sprid);
+    sprid = oam_spr(x, y, 0x83 + tet->color, 0, sprid);
   }
   
   return sprid;
@@ -329,4 +352,9 @@ void setLevelPal(uint8 level) {
     pal_col(16+i, LEVEL_PAL[level][i]);
     pal_col(0+i, LEVEL_PAL[level][i]);
   }
+}
+
+//Takes a tetrimino
+void lockTetrimino(struct Tetrimino* tet) {
+  int t = tet->id;
 }
