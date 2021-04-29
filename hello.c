@@ -265,6 +265,7 @@ uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid,
   return sprid;
 }
 
+//To render in the middle of the display, must be a sprite
 uint8 displayNextTetrimino(uint8 id, uint8 sprid, uint8 color)
 {
   int block;
