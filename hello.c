@@ -232,6 +232,7 @@ void main(void) {
 }
 
 void gameloop() {
+  int8* play[20];
   char test[5];
   int frameCount = 0;
   int level = 0;
@@ -247,14 +248,19 @@ void gameloop() {
   itoa(sizeof(playfield[0]), test, 10);
   
   vrambuf_put(NTADR_A(1, 1), test, 5);
-  
   //Initialize the playfield
   for(row = 0; row < 20; row++) {
+    int8* rowArray = malloc(10);
+    play[row] = rowArray;
+    //playfield[row] = rowArray;
     for(col = 0; col < 10; col++) {
       playfield[row][col] = -1; 
     }
   }
   
+  play[0][3]= 45;
+  itoa(play[0][2],test, 10);
+  vrambuf_put(NTADR_A(1, 1), test, 5);
   //Set initial values
   setScore(0);
   setLevel(0);
@@ -721,7 +727,7 @@ int8 wrap(int8 v, int8 min, int8 max) {
 //Pseudorandom generation as done in the actual tetris game
 //Although my arbitrary start value is probably different
 unsigned int random() {
-  static unsigned int value = 86271233; 
+  static unsigned int value = 86712333; 
   uint8 nextBit = ((value >> 1 ) & 1) ^ ((value >> 9) & 1);
   value = (nextBit << 15) | (value >> 1);
   return value;
