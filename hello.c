@@ -21,6 +21,7 @@ void setLevel(int level);
 void setScore(long score);
 
 uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid);
+uint8 displayNextTetrimino(uint8 id, uint8 sprid);
 
 //Screen
 const uint8 Tetris_Screen_RLE[793]={
@@ -182,8 +183,9 @@ void gameloop() {
     //int y = 48 + (Tetriminos[0][0][3][1] << 3);
     //sprid = oam_spr(x, y, 0x80, 0, sprid);
     
-    sprid = drawTetrimino(L_TETRIMINO, 0, 0, 5, sprid);
-    
+    sprid = drawTetrimino(0, 0, 0, 5, sprid);
+    sprid = displayNextTetrimino(O_TETRIMINO, sprid);
+
     oam_hide_rest(sprid);
     vrambuf_flush();
   }
@@ -257,6 +259,30 @@ uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid)
     y = centerY + (yoffset << 3);
     
   
+    sprid = oam_spr(x, y, 0x80, 0, sprid);
+  }
+  
+  return sprid;
+}
+
+uint8 displayNextTetrimino(uint8 id, uint8 sprid)
+{
+  int block;
+  int centerX = 172;
+  int centerY = 112;
+  
+  if(id == I_TETRIMINO || id == O_TETRIMINO)
+    centerX = 176;
+  
+  for(block = 0; block < 4; block++) {
+    int8 xoffset = Tetriminos[id][0][block][0];
+    int8 yoffset = Tetriminos[id][0][block][1];
+    int x;
+    int y;
+    
+    x = centerX + (xoffset << 3); //multiply by 8
+    y = centerY + (yoffset << 3);
+    
     sprid = oam_spr(x, y, 0x80, 0, sprid);
   }
   
