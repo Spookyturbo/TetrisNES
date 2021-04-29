@@ -8,13 +8,22 @@ Finally, turn on the PPU to display video.
 
 #include "neslib.h"
 #include "stdlib.h"
+#include "vrambuf.h"
+//#link "vrambuf.c"
+
+typedef unsigned char uint8;
+typedef signed char int8;
 
 //Function prototypes
+void gameloop(void);
+
 void setLevel(int level);
 void setScore(long score);
 
+uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid);
+
 //Screen
-const unsigned char Tetris_Screen_RLE[793]={
+const uint8 Tetris_Screen_RLE[793]={
 0x01,0x9f,0x8e,0x8f,0x01,0x02,0x8e,0x01,0x02,0x8f,0x8f,0x8e,0x8f,0x8e,0x8f,0x01,
 0x02,0x8e,0x8e,0x8f,0x8f,0x8e,0x8f,0x8e,0x8f,0x01,0x02,0x8e,0x8e,0x8f,0x8e,0x8f,
 0x8e,0x8f,0x01,0x02,0x8e,0x8f,0x9e,0x9e,0x8f,0x8f,0x9e,0x9e,0x9f,0x8e,0x8f,0x01,
@@ -67,58 +76,106 @@ const unsigned char Tetris_Screen_RLE[793]={
 0xff,0x01,0x0c,0x0f,0x01,0x06,0x0f,0x01,0x00
 };
 
-const char tetriminos[][4][2] = {
-  {{-1, 0}, {0, 0}, {1, 0}, {0, -1}},
-  {{0, -1}, {0, 0}, {1, 0}, {0, 1}},
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
+#define T_TETRIMINO 0
+#define J_TETRIMINO 1
+#define Z_TETRIMINO 2
+#define O_TETRIMINO 3
+#define S_TETRIMINO 4
+#define L_TETRIMINO 5
+#define I_TETRIMINO 6
+
+//Every Tetrimino has its rotation represented in 4 even if there are repeats
+//Just makes things easier
+//Reference order Tetrimino[ID][Rotation_Num][Block_Num][0=x, 1=y]
+const int8 Tetriminos[][4][4][2] = {
+  { //T
+    {{-1, 0}, {0, 0}, {1, 0}, {0, 1}}, //T Down (Spawn)
+    {{0, -1}, {-1, 0}, {0, 0}, {0, 1}}, //T Left
+    {{-1, 0}, {0, 0}, {1, 0}, {0, -1}}, //T Up
+    {{0, -1}, {0, 0}, {1, 0}, {0, 1}} //T Right
+  },
   
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
+  { //J
+    {{-1, 0}, {0, 0}, {1, 0}, {1, 1}}, //J Down (Spawn)
+    {{0, -1}, {0, 0}, {-1, 1}, {0, 1}}, //J Left
+    {{-1, -1}, {-1, 0}, {0, 0}, {1, 0}}, //J Up
+    {{0, -1}, {1, -1}, {0, 0}, {0, 1}} //J Right
+  },
   
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
+  { //Z
+    {{-1, 0}, {0, 0}, {0, 1}, {1, 1}}, //Z Horizontal (Spawn)
+    {{1, -1}, {0, 0}, {1, 0}, {0, 1}}, //Z Vertical
+    {{-1, 0}, {0, 0}, {0, 1}, {1, 1}}, //Z Horizontal
+    {{1, -1}, {0, 0}, {1, 0}, {0, 1}} //Z Vertical
+  },
   
-  {{}, {}, {}, {}},
+  { //O
+    {{-1, 0}, {0, 0}, {-1, 1}, {0, 1}}, //O (Spawn)
+    {{-1, 0}, {0, 0}, {-1, 1}, {0, 1}}, //O
+    {{-1, 0}, {0, 0}, {-1, 1}, {0, 1}}, //O
+    {{-1, 0}, {0, 0}, {-1, 1}, {0, 1}}, //O
+  },
   
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
+  { //S
+    {{0, 0}, {1, 0}, {-1, 1}, {0, 1}}, //S Horizontal (Spawn)
+    {{0, -1}, {0, 0}, {1, 0}, {1, 1}}, //S Vertical
+    {{0, 0}, {1, 0}, {-1, 1}, {0, 1}}, //S Horizontal
+    {{0, -1}, {0, 0}, {1, 0}, {1, 1}} //S Vertical
+  },
   
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
+  { //L
+    {{-1, 0}, {0, 0}, {1, 0}, {-1, 1}}, //L Down (Spawn)
+    {{-1, -1}, {0, -1}, {0, 0}, {0, 1}}, //L Left
+    {{1, -1}, {-1, 0}, {0, 0}, {1, 0}}, //L Up
+    {{0, -1}, {0, 0}, {0, 1}, {1, 1}} //L Right
+  },
   
-  {{}, {}, {}, {}},
-  {{}, {}, {}, {}},
+  { //I
+    {{-2, 0}, {-1, 0}, {0, 0}, {1, 0}}, //I Horizontal (Spawn)
+    {{0, -2}, {0, -1}, {0, 0}, {0, 1}}, //I Vertical
+    {{-2, 0}, {-1, 0}, {0, 0}, {1, 0}}, //I Horizontal
+    {{0, -2}, {0, -1}, {0, 0}, {0, 1}} //I Vertical
+  }
 };
+
 
 // link the pattern table into CHR ROM
 //#link "chr_generic.s"
 
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char BG_PAL[16]={ 0x0F,0x00,0x10,0x30,0x0F,0x01,0x21,0x3C,0x0F,0x06,0x16,0x26,0x0F,0x2C,0x00,0x30 };
+const uint8 BG_PAL[16]={ 0x0F,0x1A,0x10,0x30,0x0F,0x16,0x21,0x30,0x0F,0x14,0x16,0x30,0x0F,0x2C,0x00,0x30 };
+
+/*{pal:"nes",layout:"nes"}*/
+const uint8 SPR_PAL[16]={ 0x0F,0x1A,0x00,0x30,0x0F,0x16,0x00,0x30,0x0F,0x14,0x00,0x30,0x0F,0x2C,0x00,0x30 };
 
 
 // main function, run after console reset
 void main(void) {
   // set up palette colors
   pal_bg(BG_PAL);
+  pal_spr(SPR_PAL);
   
   //Draw Initial Screen
   vram_adr(0x2000);		
   vram_unrle(Tetris_Screen_RLE);
   
-  setLevel(30);
-  setScore(23425);
-  
   // enable PPU rendering (turn on screen)
   ppu_on_all();
+  
+  //Setup vram changes
+  vrambuf_clear();
+  set_vram_update(updbuf);
+  
+  gameloop();
+}
 
-  // infinite loop
-  while (1) ;
+void gameloop() {
+  int i = 0;
+  while(1) {
+    setScore(23456);
+    setLevel(20);
+    vrambuf_flush();
+  }
 }
 
 //Note level can't go above 99. Also, if you can even get past level 30 you're a god
@@ -126,7 +183,6 @@ void setLevel(int level) {
   char lstring[3];
   int row = 23;
   int len = 1;
-  level /= 10;
   
   if(level > 9) {
     row = 22;
@@ -134,8 +190,7 @@ void setLevel(int level) {
   }
   
   itoa(level, lstring, 10);
-  vram_adr(NTADR_A(row, 20));
-  vram_write(lstring, len);
+  vrambuf_put(NTADR_A(row, 20), lstring, len);
 }
 
 void setScore(long score) {
@@ -165,6 +220,23 @@ void setScore(long score) {
   }
   
   ltoa(score, scoreString, 10);
-  vram_adr(NTADR_A(row, 6));
-  vram_write(scoreString, len);
+  vrambuf_put(NTADR_A(row, 6), scoreString, len);
+}
+
+//The row and col are for the tetris play field, not pixels
+uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid) {
+  //There are 2 fake rows above row 0 for spawning
+  int block;
+  int centerX = 64 + col << 3; //Multiplying by 8
+  int centerY = 48 + row << 3;
+  
+  for(block = 0; block < 4; block++) {
+    int x = centerX + Tetriminos[id][rotation][block][0] << 3; //multiply by 8
+    int y = centerY + Tetriminos[id][rotation][block][1] << 3;
+    
+  
+    sprid = oam_spr(x, y, 0x80, 0, sprid);
+  }
+  
+  return sprid;
 }
