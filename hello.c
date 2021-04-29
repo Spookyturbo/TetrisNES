@@ -16,12 +16,16 @@ typedef signed char int8;
 
 //Function prototypes
 void gameloop(void);
+void setLevelPal(uint8 level);
 
 void setLevel(int level);
 void setScore(long score);
 
+//Color is the offset used in the chr table to choose the sprite
 uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid, uint8 color);
 uint8 displayNextTetrimino(uint8 id, uint8 sprid, uint8 color);
+
+//Const and defines
 
 //Screen
 const uint8 Tetris_Screen_RLE[793]={
@@ -147,7 +151,26 @@ const int8 Tetriminos[][4][4][2] = {
 const uint8 BG_PAL[16]={ 0x0F,0x1A,0x10,0x30,0x0F,0x16,0x21,0x30,0x0F,0x14,0x16,0x30,0x0F,0x2C,0x00,0x30 };
 
 /*{pal:"nes",layout:"nes"}*/
-const uint8 SPR_PAL[16]={ 0x0F,0x1A,0x00,0x30,0x0F,0x16,0x00,0x30,0x0F,0x14,0x00,0x30,0x0F,0x2C,0x00,0x30 };
+const uint8 SPR_PAL[16]={ 0x0F,0x16,0x12,0x30,0x0F,0x16,0x12,0x30,0x0F,0x14,0x00,0x30,0x0F,0x2C,0x00,0x30 };
+
+const uint8 LEVEL_PAL[10][4] = {
+  {0x0F, 0x21, 0x12, 0x30},
+  {0x0F, 0x29, 0x1A, 0x30},
+  {0x0F, 0x24, 0x14, 0x30},
+  {0x0F, 0x2A, 0x12, 0x30},
+  {0x0F, 0x2B, 0x15, 0x30},
+  {0x0F, 0x22, 0x2B, 0x30},
+  {0x0F, 0x00, 0x16, 0x30},
+  {0x0F, 0x05, 0x13, 0x30},
+  {0x0F, 0x16, 0x12, 0x30},
+  {0x0F, 0x27, 0x16, 0x30}
+};
+
+//Globals
+
+//Access as [row][col]
+//-1 = Empty, 0-3 is the color of that spot
+int8 playfield[20][10];
 
 
 // main function, run after console reset
@@ -176,15 +199,17 @@ void gameloop() {
   //Just tests for now
   setScore(23456);
   setLevel(20);
-  
+  setLevelPal(0);
   while(1) {
     int sprid = 0;
     //int x = 64 + (Tetriminos[0][0][3][0] << 3); //multiply by 8
     //int y = 48 + (Tetriminos[0][0][3][1] << 3);
     //sprid = oam_spr(x, y, 0x80, 0, sprid);
     
-    sprid = drawTetrimino(0, 0, 0, 5, sprid, 1);
-    sprid = displayNextTetrimino(O_TETRIMINO, sprid, 1);
+    sprid = drawTetrimino(0, 0, 0, 5, sprid, 0);
+    sprid = drawTetrimino(0, 0, 0, 1, sprid, 1);
+    sprid = drawTetrimino(0, 0, 3, 1, sprid, 2);
+    sprid = displayNextTetrimino(O_TETRIMINO, sprid, 0);
 
     oam_hide_rest(sprid);
     vrambuf_flush();
@@ -237,6 +262,7 @@ void setScore(long score) {
 }
 
 //The row and col are for the tetris play field, not pixels
+//Color is a number 0-2
 uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid, uint8 color) {
   //There are 2 fake rows above row 0 for spawning
   int block;
@@ -259,13 +285,14 @@ uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid,
     y = centerY + (yoffset << 3);
     
   
-    sprid = oam_spr(x, y, 0x80, color, sprid);
+    sprid = oam_spr(x, y, 0x83 + color, 0, sprid);
   }
   
   return sprid;
 }
 
 //To render in the middle of the display, must be a sprite
+//Color is a number 0-2
 uint8 displayNextTetrimino(uint8 id, uint8 sprid, uint8 color)
 {
   int block;
@@ -284,8 +311,17 @@ uint8 displayNextTetrimino(uint8 id, uint8 sprid, uint8 color)
     x = centerX + (xoffset << 3); //multiply by 8
     y = centerY + (yoffset << 3);
     
-    sprid = oam_spr(x, y, 0x80, color, sprid);
+    sprid = oam_spr(x, y, 0x83 + color, 0, sprid);
   }
   
   return sprid;
+}
+
+void setLevelPal(uint8 level) {
+  int i;
+  //My own modulo
+  while(level > 9)
+    level -= 10;
+  for(i = 0; i < 4; i++)
+    pal_col(16+i, LEVEL_PAL[level][i]);
 }
