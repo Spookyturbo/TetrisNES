@@ -9,6 +9,7 @@ Finally, turn on the PPU to display video.
 #include "neslib.h"
 #include "stdlib.h"
 #include "vrambuf.h"
+#include "string.h"
 //#link "vrambuf.c"
 
 typedef unsigned char uint8;
@@ -37,8 +38,17 @@ uint8 moveTetrimino(struct Tetrimino* tet, int8 colChange, int8 rotationChange);
 void lockTetrimino(struct Tetrimino* tet);
 void spawnTetrimino(struct Tetrimino* tet, uint8 id, uint8 color);
 
+//Using the just place tetrimino, find out what rows, if any have been solved
+//Clear them, and return the number of rows cleared
+uint8 clearRows(struct Tetrimino* tet);
+//This actually does the changes to the playfield array when clearing
+void clearPlayfieldRows(int8 rowsToClear[], uint8 len);
+void drawPlayfield(void);
+uint8 isRowEmpty(uint8 row);
+
 //Returns the wrapped value
 int8 wrap(int8 v, int8 min, int8 max);
+void selectionSort(int8 arr[], int8 n);
 
 //Advances the random value and returns it
 unsigned int random(void);
@@ -222,6 +232,7 @@ void main(void) {
 }
 
 void gameloop() {
+  char test[5];
   int frameCount = 0;
   int level = 0;
   uint8 row;
@@ -232,6 +243,10 @@ void gameloop() {
   struct Tetrimino futureTet;
   uint8 nextPieceId = 1;
   uint8 nextPieceColor = 1;
+  
+  itoa(sizeof(playfield[0]), test, 10);
+  
+  vrambuf_put(NTADR_A(1, 1), test, 5);
   
   //Initialize the playfield
   for(row = 0; row < 20; row++) {
@@ -289,6 +304,8 @@ void gameloop() {
       //Check for lines, spawn the next piece, etc...
       if(!isValidSpot(&futureTet)) {
         lockTetrimino(&tet);
+        drawPlayfield();
+        //clearRows(&tet);
         spawnTetrimino(&tet, nextPieceId, nextPieceColor);
         //Generate the next piece
         //Because I don't like lots of duplicates in a row
@@ -383,7 +400,7 @@ uint8 drawTetrimino(struct Tetrimino* tet, uint8 sprid) {
     //Not checking for other conditions because this is the only one that
     //should ever happen, and I would prefer to see the error so it is obvious
     //then hide it
-    if((yoffset + (int8)tet->row) < 0)
+    if((yoffset + tet->row) < 0)
       continue;
     
     x = centerX + (xoffset << 3); //multiply by 8
@@ -473,14 +490,146 @@ void lockTetrimino(struct Tetrimino* tet) {
     int row = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
     int col = tet->col + Tetriminos[tet->id][tet->rotation][block][0];
     
+    //Ignore pieces above the map
+    if(row < 0)
+      continue;
+    
     //set it in the playfield
     playfield[row][col] = tet->color;
     
     //Draw single byte to the nametable
-    VRAMBUF_PUT(NTADR_A(originX + col, originY + row), 1, NT_UPD_HORZ);
-    VRAMBUF_ADD(0x83 + tet->color);
-    vrambuf_end();
+    //VRAMBUF_PUT(NTADR_A(originX + col, originY + row), 1, NT_UPD_HORZ);
+    //VRAMBUF_ADD(0x83 + tet->color);
+    //vrambuf_end();
   }
+}
+
+uint8 clearRows(struct Tetrimino* tet) {
+  uint8 block;
+  uint8 i;
+  uint8 numRowsChecked = 0;
+  uint8 rowsCleared = 0;
+  uint8 skip;
+  int8 rowChecked[4] = {-1, -1, -1, -1};
+  //Because of block size only 4 rows can ever be cleared at once
+  int8 rowsToClear[4] = {-1, -1, -1, -1};
+  
+  //Find the rows that need cleared
+  for(block = 0; block < 4; block++) {
+    //Row and col of this block
+    int8 row = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
+    
+    skip = 0;
+    //Check to see if this row has been checked yet
+    for(i = 0; i < numRowsChecked; i++) {
+      if(rowChecked[i] == row) {
+        skip = 1;
+        break;
+      }
+    }
+    
+    if(skip)
+      continue;
+    
+    skip = 0;
+    //Now check the row
+    for(i = 0; i < 10; i++) {
+       if(playfield[row][i] == -1) {
+         skip = 1;
+         break;
+       }
+    }
+    
+    //Row had a hole in it, check next
+    if(skip)
+      continue;
+    
+    //This row is full! flag it to be cleared
+    //When flagging, sort highest to lowest
+    rowsToClear[rowsCleared] = row;
+    rowsCleared++;
+  }
+  
+  //Clearing and condensing is done after everything is found, 
+  //that way messing with the playfield doesn't affect the checks
+  //clearPlayfieldRows(rowsToClear, rowsCleared);
+  
+  //Redraw the updated playfield
+  //if(rowsCleared)
+  //  drawPlayfield();
+  
+  return rowsCleared;
+}
+
+void clearPlayfieldRows(int8 rowsToClear[], uint8 len) {
+  int8 rowIndex;
+  int8 curClearRow;
+  int8 nextClearRow;
+  int8 curEmptyRow;
+  int row;
+  
+  if(len == 0)
+    return;
+  
+  //Sort the rows array high to low
+  selectionSort(rowsToClear, len);
+  
+  //Setup initial row to be copied to
+  curEmptyRow = rowsToClear[0];
+  
+  //Loop through the sets of rows to clear
+  for(rowIndex = 0; rowIndex < len - 1; rowIndex++) {
+    curClearRow = rowsToClear[rowIndex];
+    //If there isn't a next row that got cleared, this loop exits
+    nextClearRow = rowsToClear[rowIndex + 1];
+   
+    //Move all the rows down that are between this and the next clear row
+    for(row = curClearRow - 1; row > nextClearRow; row--) {
+      memcpy(playfield[curEmptyRow], playfield[row], sizeof(playfield[row]));
+      curEmptyRow--; //Set the row just moved down as the empty row
+    }
+    
+  }
+  
+  //There is no next cleared row, so loop and bring everything down 
+  //until an empty row is found
+  curClearRow = rowsToClear[len - 1];
+  row = curClearRow - 1;
+  while(row >= 0) {
+    memcpy(playfield[curEmptyRow], playfield[row], sizeof(playfield[row]));
+    
+    //Finished clearing by copying an empty row
+    if(isRowEmpty(row))
+      break;
+    
+    curEmptyRow--; //Set the row just moved down as the empty row
+    row--;
+  }
+}
+
+void drawPlayfield() {
+  int row;
+  int i;
+  for(row = 19; row > -1; row--) {
+    char rowValues[10];
+    for(i = 0; i < 10; i++) {
+      if(playfield[row][i] == -1)
+        rowValues[i] = 0x00;
+      else
+        rowValues[i] = 0x83 + playfield[row][i];
+    }
+    vrambuf_put(NTADR_A(8, 6 + row), rowValues, 10);
+  }
+}
+
+uint8 isRowEmpty(uint8 row) {
+  int i;
+  for(i = 0; i < 10; i++) {
+    if(playfield[row][i] != -1)
+      return false;
+  }
+  
+  return true;
 }
 
 //Used to check if a move is valid
@@ -495,9 +644,14 @@ uint8 isValidSpot(struct Tetrimino* tet) {
     if(row >= 20)
       return false;
     
+    
     //Blocks can't go up so not checking
     if(col >= 10 || col < 0)
       return false;
+    
+    //Ignore parts not on screen
+    if(row < 0)
+      continue;
     
     //Check to see if already a piece there
     if(playfield[row][col] != -1)
@@ -567,8 +721,29 @@ int8 wrap(int8 v, int8 min, int8 max) {
 //Pseudorandom generation as done in the actual tetris game
 //Although my arbitrary start value is probably different
 unsigned int random() {
-  static unsigned int value = 8671233; 
+  static unsigned int value = 86271233; 
   uint8 nextBit = ((value >> 1 ) & 1) ^ ((value >> 9) & 1);
   value = (nextBit << 15) | (value >> 1);
   return value;
+}
+
+//Selection sort that sorta highest to lowest
+void selectionSort(int8 arr[], int8 n)
+{
+  int8 i, j, maxIndex, tmp;
+ 
+  // One by one move boundary of unsorted subarray
+  for (i = 0; i < n - 1; i++) {
+ 
+    // Find the minimum element in unsorted array
+    maxIndex = i;
+    for (j = i + 1; j < n; j++)
+      if (arr[j] > arr[maxIndex])
+        maxIndex = j;
+ 
+    //Swap
+    tmp = arr[i];
+    arr[i] = arr[maxIndex];
+    arr[maxIndex] = tmp;
+  }
 }
