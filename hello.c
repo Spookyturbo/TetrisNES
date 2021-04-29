@@ -7,6 +7,11 @@ Finally, turn on the PPU to display video.
 */
 
 #include "neslib.h"
+#include "stdlib.h"
+
+//Function prototypes
+void setLevel(int level);
+void setScore(long score);
 
 //Screen
 const unsigned char Tetris_Screen_RLE[793]={
@@ -62,6 +67,34 @@ const unsigned char Tetris_Screen_RLE[793]={
 0xff,0x01,0x0c,0x0f,0x01,0x06,0x0f,0x01,0x00
 };
 
+const char tetriminos[][4][2] = {
+  {{-1, 0}, {0, 0}, {1, 0}, {0, -1}},
+  {{0, -1}, {0, 0}, {1, 0}, {0, 1}},
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  
+  {{}, {}, {}, {}},
+  
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+  
+  {{}, {}, {}, {}},
+  {{}, {}, {}, {}},
+};
+
 // link the pattern table into CHR ROM
 //#link "chr_generic.s"
 
@@ -78,10 +111,60 @@ void main(void) {
   vram_adr(0x2000);		
   vram_unrle(Tetris_Screen_RLE);
   
+  setLevel(30);
+  setScore(23425);
   
   // enable PPU rendering (turn on screen)
   ppu_on_all();
 
   // infinite loop
   while (1) ;
+}
+
+//Note level can't go above 99. Also, if you can even get past level 30 you're a god
+void setLevel(int level) {
+  char lstring[3];
+  int row = 23;
+  int len = 1;
+  level /= 10;
+  
+  if(level > 9) {
+    row = 22;
+    len = 2;
+  }
+  
+  itoa(level, lstring, 10);
+  vram_adr(NTADR_A(row, 20));
+  vram_write(lstring, len);
+}
+
+void setScore(long score) {
+  char scoreString[7];
+  int row = 25;
+  int len = 1;
+  
+  if(score >= 100000) {
+    row = 20;
+    len = 6;
+  }
+  else if(score >= 10000) {
+    row = 21;
+    len = 5;
+  }
+  else  if(score >= 1000) {
+    row = 22;
+    len = 4;
+  }
+  else if(score >= 100) {
+    row = 23;
+    len = 3;
+  }
+  else if(score >= 10) {
+    row = 24;
+    len = 2;
+  }
+  
+  ltoa(score, scoreString, 10);
+  vram_adr(NTADR_A(row, 6));
+  vram_write(scoreString, len);
 }
