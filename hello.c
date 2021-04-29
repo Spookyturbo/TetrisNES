@@ -171,9 +171,20 @@ void main(void) {
 
 void gameloop() {
   int i = 0;
+  
+  //Just tests for now
+  setScore(23456);
+  setLevel(20);
+  
   while(1) {
-    setScore(23456);
-    setLevel(20);
+    int sprid = 0;
+    //int x = 64 + (Tetriminos[0][0][3][0] << 3); //multiply by 8
+    //int y = 48 + (Tetriminos[0][0][3][1] << 3);
+    //sprid = oam_spr(x, y, 0x80, 0, sprid);
+    
+    sprid = drawTetrimino(L_TETRIMINO, 0, 0, 5, sprid);
+    
+    oam_hide_rest(sprid);
     vrambuf_flush();
   }
 }
@@ -227,12 +238,23 @@ void setScore(long score) {
 uint8 drawTetrimino(uint8 id, uint8 rotation, uint8 row, uint8 col, uint8 sprid) {
   //There are 2 fake rows above row 0 for spawning
   int block;
-  int centerX = 64 + col << 3; //Multiplying by 8
-  int centerY = 48 + row << 3;
+  int centerX = 64 + (col << 3); //Multiplying by 8
+  int centerY = 48 + (row << 3);
   
   for(block = 0; block < 4; block++) {
-    int x = centerX + Tetriminos[id][rotation][block][0] << 3; //multiply by 8
-    int y = centerY + Tetriminos[id][rotation][block][1] << 3;
+    int8 xoffset = Tetriminos[id][rotation][block][0];
+    int8 yoffset = Tetriminos[id][rotation][block][1];
+    int x;
+    int y;
+    
+    //Not checking for other conditions because this is the only one that
+    //should ever happen, and I would prefer to see the error so it is obvious
+    //then hide it
+    if((yoffset + (int8)row) < 0)
+      continue;
+    
+    x = centerX + (xoffset << 3); //multiply by 8
+    y = centerY + (yoffset << 3);
     
   
     sprid = oam_spr(x, y, 0x80, 0, sprid);
