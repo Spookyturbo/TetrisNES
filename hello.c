@@ -16,17 +16,28 @@ typedef signed char int8;
 
 //Function prototypes
 void gameloop(void);
-void setLevelPal(uint8 level);
 
-void setLevel(int level);
+void setLevelPal(uint8 level);
+void setLevel(uint8 level);
+void setLevelSpeed(uint8 level);
+  
 void setScore(long score);
 
 //Color is the offset used in the chr table to choose the sprite
 uint8 drawTetrimino(struct Tetrimino* tet, uint8 sprid);
 uint8 displayNextTetrimino(uint8 id, uint8 sprid, uint8 color);
 
+uint8 isValidSpot(struct Tetrimino* tet);
+
+//Returns true if a change was made to the tetrimino, false if it stayed the same
+//Ensures the move done is valid
+uint8 moveTetrimino(struct Tetrimino* tet, int8 colChange, int8 rotationChange);
+
 //Using the given tetrimino, lock it into the background
 void lockTetrimino(struct Tetrimino* tet);
+
+//Returns the wrapped value
+int8 wrap(int8 v, int8 min, int8 max);
 
 //Const and defines
 
@@ -173,9 +184,9 @@ const uint8 LEVEL_PAL[10][4] = {
 //Some stuff
 struct Tetrimino {
   uint8 id;
-  uint8 rotation;
-  uint8 row;
-  uint8 col;
+  int8 rotation;
+  int8 row;
+  int8 col;
   uint8 color;
 };
 
@@ -184,6 +195,7 @@ struct Tetrimino {
 //Access as [row][col]
 //-1 = Empty, 0-3 is the color of that spot
 int8 playfield[20][10];
+uint8 framesPerDrop;
 
 
 // main function, run after console reset
@@ -207,11 +219,15 @@ void main(void) {
 }
 
 void gameloop() {
-  int i = 0;
-  int row;
-  int col;
-  struct Tetrimino tet = {0, 0, 0, 5, 0};
+  int frameCount = 0;
+  uint8 row;
+  uint8 col;
   
+  //The falling tetris piece
+  struct Tetrimino tet = {0 , 0, 0, 5, 0};
+  struct Tetrimino futureTet;
+  uint8 nextPieceId = 1;
+  uint8 nextPieceColor = 0;
   
   //Initialize the playfield
   for(row = 0; row < 20; row++) {
@@ -220,40 +236,76 @@ void gameloop() {
     }
   }
   
-  //Just tests for now
-  setScore(23456);
-  setLevel(20);
+  //Set initial values
+  setScore(0);
+  setLevel(0);
   setLevelPal(0);
-  while(1) {
-    struct Tetrimino tet2 = {0, 0, 0, 1, 2};
-    struct Tetrimino tet3 = {0, 0, 3, 2, 1};
-    int sprid = 0;
+  setLevelSpeed(0);
   
-    if(i > 48) {
-      //tet.row++;
-      if(tet.row == 18)
-        lockTetrimino(&tet);
-      if(tet.row > 18)
-        tet.row = 0;
-      i = 0;
-    }
-    //int x = 64 + (Tetriminos[0][0][3][0] << 3); //multiply by 8
-    //int y = 48 + (Tetriminos[0][0][3][1] << 3);
-    //sprid = oam_spr(x, y, 0x80, 0, sprid);
+  while(1) {
+    uint8 padResult = pad_trigger(0);
+    uint8 sprid = 0;
+    int8 colChange = 0;
+    int8 rotationChange = 0;
+    int8 framesTillDrop = framesPerDrop - frameCount;
     
+    //Handle the logic for input
+    //Input that affects turning/moving/fast dropping happens BEFORE 
+    //the actual dropping. This means that if the new position would result
+    //in a lock when it drops, it will still perform the move
+    if(pad_poll(0) & PAD_DOWN) {
+      //Fast Fall
+      framesTillDrop = 0;
+    }
+    else if(padResult & PAD_LEFT) {
+      colChange = -1;
+    }
+    else if(padResult & PAD_RIGHT) {
+      colChange = 1;
+    }
+    
+    if(padResult & PAD_B)
+      rotationChange -= 1;
+    if(padResult & PAD_A)
+      rotationChange += 1;
+    
+    //Variables are used to determine what needs changed so every ordering of input
+    //can be checked.
+    //Get the move that should happen
+    //This handles all the error conditions as well
+    moveTetrimino(&tet, colChange, rotationChange);
+    
+    //Next check if a drop should occur and handle it
+    if(framesTillDrop <= 0) {
+      futureTet = tet;
+      futureTet.row++;
+      frameCount = 0;
+      
+      //If the spot isn't valid, it is time to lock into place
+      //Check for lines, spawn the next piece, etc...
+      if(!isValidSpot(&futureTet)) {
+        lockTetrimino(&tet);
+      }
+      else {
+        tet = futureTet; 
+      }
+    }
+      
+    
+    //Drawing
     sprid = drawTetrimino(&tet, sprid);
-    sprid = drawTetrimino(&tet2, sprid);
-    sprid = drawTetrimino(&tet3, sprid);
-    sprid = displayNextTetrimino(O_TETRIMINO, sprid, 0);
+    sprid = displayNextTetrimino(nextPieceId, sprid, nextPieceColor);
     
     oam_hide_rest(sprid);
+    
+    //Wait for next frame and update count
+    frameCount++;
     vrambuf_flush();
-    i++;
   }
 }
 
 //Note level can't go above 99. Also, if you can even get past level 30 you're a god
-void setLevel(int level) {
+void setLevel(uint8 level) {
   char lstring[3];
   int row = 23;
   int len = 1;
@@ -369,9 +421,36 @@ void setLevelPal(uint8 level) {
   }
 }
 
+void setLevelSpeed(uint8 level) {
+  //Linear scaling
+  if(level < 9) {
+    framesPerDrop = 48;
+    //FramesperDrop -= 5 * level
+    while(level > 0) {
+      framesPerDrop -= 5;
+      level--;
+    }
+    return;
+  }
+  
+  //Non linear scaling
+  if(level > 28)
+    framesPerDrop = 1;
+  else if(level > 18)
+    framesPerDrop = 2;
+  else if(level > 15)
+    framesPerDrop = 3;
+  else if(level > 12)
+    framesPerDrop = 4;
+  else if(level > 9)
+    framesPerDrop = 5;
+  else
+    framesPerDrop = 6;
+}
+
 //Takes a tetrimino
 void lockTetrimino(struct Tetrimino* tet) {
-  int block;
+  uint8 block;
   int originX = 8;
   int originY = 6;
   
@@ -388,4 +467,77 @@ void lockTetrimino(struct Tetrimino* tet) {
     VRAMBUF_ADD(0x83 + tet->color);
     vrambuf_end();
   }
+}
+
+//Used to check if a move is valid
+uint8 isValidSpot(struct Tetrimino* tet) {
+  uint8 block;
+  for(block = 0; block < 4; block++) {
+    //Row and col of this block
+    int row = tet->col + Tetriminos[tet->id][tet->rotation][block][0];
+    int col = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
+    
+    //Ensure in bounds
+    if(row >= 10 || row < 0)
+      return false;
+    
+    //Blocks can't go up so not checking
+    if(col >= 20)
+      return false;
+    
+    //Check to see if already a piece there
+    if(playfield[row][col] != -1)
+       return false;
+  }
+  
+  //All the blocks passed the tests, its valid
+  return true;
+}
+
+uint8 moveTetrimino(struct Tetrimino* tet, int8 colChange, int8 rotationChange) {
+  struct Tetrimino futureTet;
+  
+  //Try applying both changes first
+  if(colChange != 0 && rotationChange != 0) {
+    futureTet = *tet;
+    futureTet.col += colChange;
+    futureTet.rotation = wrap(futureTet.rotation + rotationChange, 0, 3);
+    if(isValidSpot(&futureTet)) {
+      *tet = futureTet;
+      return true;
+    }
+  }
+  
+  //Try just sliding
+  if(colChange != 0) {
+    futureTet = *tet;
+    futureTet.col += colChange;
+    if(isValidSpot(&futureTet)) {
+      *tet = futureTet;
+      return true;
+    }
+  }
+  
+  //Try just rotating
+  if(rotationChange != 0) {
+    futureTet = *tet;
+    futureTet.rotation = wrap(futureTet.rotation + rotationChange, 0, 3);
+    if(isValidSpot(&futureTet)) {
+      *tet = futureTet;
+      return true;
+    }
+  }
+  
+  //No changes made
+  return false;
+}
+
+//Wrap, min and max inclusive
+int8 wrap(int8 v, int8 min, int8 max) {
+  //wrap
+  while(v < min)
+    v = (v - min) + (max + 1);
+  while(v > max)
+    v = (v - max) + (min - 1);
+  return v;
 }
