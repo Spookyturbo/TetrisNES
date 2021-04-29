@@ -35,9 +35,13 @@ uint8 moveTetrimino(struct Tetrimino* tet, int8 colChange, int8 rotationChange);
 
 //Using the given tetrimino, lock it into the background
 void lockTetrimino(struct Tetrimino* tet);
+void spawnTetrimino(struct Tetrimino* tet, uint8 id, uint8 color);
 
 //Returns the wrapped value
 int8 wrap(int8 v, int8 min, int8 max);
+
+//Advances the random value and returns it
+unsigned int random(void);
 
 //Const and defines
 
@@ -197,7 +201,6 @@ struct Tetrimino {
 int8 playfield[20][10];
 uint8 framesPerDrop;
 
-
 // main function, run after console reset
 void main(void) {
   // set up palette colors
@@ -220,6 +223,7 @@ void main(void) {
 
 void gameloop() {
   int frameCount = 0;
+  int level = 0;
   uint8 row;
   uint8 col;
   
@@ -227,7 +231,7 @@ void gameloop() {
   struct Tetrimino tet = {0 , 0, 0, 5, 0};
   struct Tetrimino futureTet;
   uint8 nextPieceId = 1;
-  uint8 nextPieceColor = 0;
+  uint8 nextPieceColor = 1;
   
   //Initialize the playfield
   for(row = 0; row < 20; row++) {
@@ -285,6 +289,16 @@ void gameloop() {
       //Check for lines, spawn the next piece, etc...
       if(!isValidSpot(&futureTet)) {
         lockTetrimino(&tet);
+        spawnTetrimino(&tet, nextPieceId, nextPieceColor);
+        //Generate the next piece
+        //Because I don't like lots of duplicates in a row
+        //Having it add value that wraps around to choose the peice
+        //Duplicates can still happen, just hopefull less often
+        nextPieceId += (random() >> 8) & 15;
+        nextPieceId = wrap(nextPieceId, 0, 6);
+        
+        nextPieceColor = wrap((random() >> 8) & 7, 0, 2);
+        
       }
       else {
         tet = futureTet; 
@@ -456,14 +470,14 @@ void lockTetrimino(struct Tetrimino* tet) {
   
   for(block = 0; block < 4; block++) {
     //Row and col of this block
-    int row = tet->col + Tetriminos[tet->id][tet->rotation][block][0];
-    int col = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
+    int row = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
+    int col = tet->col + Tetriminos[tet->id][tet->rotation][block][0];
     
     //set it in the playfield
     playfield[row][col] = tet->color;
     
     //Draw single byte to the nametable
-    VRAMBUF_PUT(NTADR_A(originX + row, originY + col), 1, NT_UPD_HORZ);
+    VRAMBUF_PUT(NTADR_A(originX + col, originY + row), 1, NT_UPD_HORZ);
     VRAMBUF_ADD(0x83 + tet->color);
     vrambuf_end();
   }
@@ -474,15 +488,15 @@ uint8 isValidSpot(struct Tetrimino* tet) {
   uint8 block;
   for(block = 0; block < 4; block++) {
     //Row and col of this block
-    int row = tet->col + Tetriminos[tet->id][tet->rotation][block][0];
-    int col = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
+    int row = tet->row + Tetriminos[tet->id][tet->rotation][block][1];
+    int col = tet->col + Tetriminos[tet->id][tet->rotation][block][0];
     
     //Ensure in bounds
-    if(row >= 10 || row < 0)
+    if(row >= 20)
       return false;
     
     //Blocks can't go up so not checking
-    if(col >= 20)
+    if(col >= 10 || col < 0)
       return false;
     
     //Check to see if already a piece there
@@ -532,6 +546,14 @@ uint8 moveTetrimino(struct Tetrimino* tet, int8 colChange, int8 rotationChange) 
   return false;
 }
 
+void spawnTetrimino(struct Tetrimino* tet, uint8 id, uint8 color) {
+  tet->id = id;
+  tet->rotation = 0;
+  tet->color = color;
+  tet->row = 0;
+  tet->col = 5;
+}
+
 //Wrap, min and max inclusive
 int8 wrap(int8 v, int8 min, int8 max) {
   //wrap
@@ -540,4 +562,13 @@ int8 wrap(int8 v, int8 min, int8 max) {
   while(v > max)
     v = (v - max) + (min - 1);
   return v;
+}
+
+//Pseudorandom generation as done in the actual tetris game
+//Although my arbitrary start value is probably different
+unsigned int random() {
+  static unsigned int value = 8671233; 
+  uint8 nextBit = ((value >> 1 ) & 1) ^ ((value >> 9) & 1);
+  value = (nextBit << 15) | (value >> 1);
+  return value;
 }
