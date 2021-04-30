@@ -46,6 +46,8 @@ void clearPlayfieldRows(int8 rowsToClear[], uint8 len);
 void drawPlayfield(void);
 uint8 isRowEmpty(uint8 row);
 
+int getPoints(uint8 rowsCleared, uint8 level);
+
 //Returns the wrapped value
 int8 wrap(int8 v, int8 min, int8 max);
 void selectionSort(int8 arr[], int8 n);
@@ -208,7 +210,12 @@ struct Tetrimino {
 
 //Access as [row][col]
 //-1 = Empty, 0-3 is the color of that spot
-int8 playfield[20][10];
+//The _ is a back end and the actual one allows rearranging of rows
+//Idk why I had to do it like this, I wanted to just malloc and have one of these
+//But it was getting very mad
+int8 _playfield[20][10];
+int8* playfield[20];
+
 uint8 framesPerDrop;
 
 // main function, run after console reset
@@ -233,9 +240,10 @@ void main(void) {
 
 void gameloop() {
   int8* play[20];
-  char test[5];
   int frameCount = 0;
-  int level = 0;
+  int8 level = 0;
+  int8 clearCounter = 0;
+  long score;
   uint8 row;
   uint8 col;
   
@@ -244,23 +252,19 @@ void gameloop() {
   struct Tetrimino futureTet;
   uint8 nextPieceId = 1;
   uint8 nextPieceColor = 1;
-  
-  itoa(sizeof(playfield[0]), test, 10);
-  
-  vrambuf_put(NTADR_A(1, 1), test, 5);
+ 
   //Initialize the playfield
   for(row = 0; row < 20; row++) {
-    int8* rowArray = malloc(10);
+    int8* rowArray = (int8*) malloc(100);
     play[row] = rowArray;
     //playfield[row] = rowArray;
     for(col = 0; col < 10; col++) {
-      playfield[row][col] = -1; 
+      _playfield[row][col] = -1; 
     }
+    //Connect the back end to the front end
+    playfield[row] = _playfield[row];
   }
-  
-  play[0][3]= 45;
-  itoa(play[0][2],test, 10);
-  vrambuf_put(NTADR_A(1, 1), test, 5);
+
   //Set initial values
   setScore(0);
   setLevel(0);
@@ -309,10 +313,29 @@ void gameloop() {
       //If the spot isn't valid, it is time to lock into place
       //Check for lines, spawn the next piece, etc...
       if(!isValidSpot(&futureTet)) {
+        int8 numCleared = 0;
+        //Lock into place and clear
         lockTetrimino(&tet);
-        drawPlayfield();
-        //clearRows(&tet);
+        //drawPlayfield();
+        numCleared = clearRows(&tet);
+        
+        //Update level
+        clearCounter += numCleared;
+        if(clearCounter >= 10) {
+          clearCounter -= 10;
+          level++;
+          setLevel(level);
+          setLevelPal(level);
+          setLevelSpeed(level);
+        } 
+        
+        //Update Score
+        score += getPoints(numCleared, level);
+        setScore(score);
+        
+        //Spawn Next Piece
         spawnTetrimino(&tet, nextPieceId, nextPieceColor);
+        
         //Generate the next piece
         //Because I don't like lots of duplicates in a row
         //Having it add value that wraps around to choose the peice
@@ -504,9 +527,12 @@ void lockTetrimino(struct Tetrimino* tet) {
     playfield[row][col] = tet->color;
     
     //Draw single byte to the nametable
-    //VRAMBUF_PUT(NTADR_A(originX + col, originY + row), 1, NT_UPD_HORZ);
-    //VRAMBUF_ADD(0x83 + tet->color);
-    //vrambuf_end();
+    VRAMBUF_PUT(NTADR_A(originX + col, originY + row), 1, NT_UPD_HORZ);
+    VRAMBUF_ADD(0x83 + tet->color);
+    vrambuf_end();
+    //Ensure this renders before the tetrimino is considered "Spawned" And teleported
+    //Without this, there will be a flash when a piece is locked
+    vrambuf_flush();
   }
 }
 
@@ -558,24 +584,37 @@ uint8 clearRows(struct Tetrimino* tet) {
   
   //Clearing and condensing is done after everything is found, 
   //that way messing with the playfield doesn't affect the checks
-  //clearPlayfieldRows(rowsToClear, rowsCleared);
+  clearPlayfieldRows(rowsToClear, rowsCleared);
   
   //Redraw the updated playfield
-  //if(rowsCleared)
-  //  drawPlayfield();
+  if(rowsCleared)
+    drawPlayfield();
   
   return rowsCleared;
 }
 
 void clearPlayfieldRows(int8 rowsToClear[], uint8 len) {
+  int8* emptyRows[4];
   int8 rowIndex;
   int8 curClearRow;
   int8 nextClearRow;
   int8 curEmptyRow;
-  int row;
+  int8 row;
+  int8 i;
   
   if(len == 0)
     return;
+  
+  //clear all the rows that need cleared
+  for(rowIndex = 0; rowIndex < len; rowIndex++) {
+    row = rowsToClear[rowIndex];
+    emptyRows[rowIndex] = playfield[row];
+    for(i = 0; i < 10; i++) {
+      playfield[row][i] = -1; 
+    }
+  }
+  
+  //Move all the rows down
   
   //Sort the rows array high to low
   selectionSort(rowsToClear, len);
@@ -591,31 +630,33 @@ void clearPlayfieldRows(int8 rowsToClear[], uint8 len) {
    
     //Move all the rows down that are between this and the next clear row
     for(row = curClearRow - 1; row > nextClearRow; row--) {
-      memcpy(playfield[curEmptyRow], playfield[row], sizeof(playfield[row]));
+      playfield[curEmptyRow] = playfield[row];
+      //memcpy(playfield[curEmptyRow], playfield[row], sizeof(playfield[row]));
       curEmptyRow--; //Set the row just moved down as the empty row
     }
     
   }
   
   //There is no next cleared row, so loop and bring everything down 
-  //until an empty row is found
   curClearRow = rowsToClear[len - 1];
   row = curClearRow - 1;
   while(row >= 0) {
-    memcpy(playfield[curEmptyRow], playfield[row], sizeof(playfield[row]));
-    
-    //Finished clearing by copying an empty row
-    if(isRowEmpty(row))
-      break;
+    playfield[curEmptyRow] = playfield[row];
     
     curEmptyRow--; //Set the row just moved down as the empty row
     row--;
+  }
+  
+  //Place the cleared rows at the top
+  for(rowIndex = 0; rowIndex < len;  rowIndex++) {
+    playfield[rowIndex] = emptyRows[rowIndex]; 
   }
 }
 
 void drawPlayfield() {
   int row;
   int i;
+  
   for(row = 19; row > -1; row--) {
     char rowValues[10];
     for(i = 0; i < 10; i++) {
@@ -712,6 +753,28 @@ void spawnTetrimino(struct Tetrimino* tet, uint8 id, uint8 color) {
   tet->color = color;
   tet->row = 0;
   tet->col = 5;
+}
+
+int getPoints(uint8 rowsCleared, uint8 level) {
+  int score = 0;
+  int pointsPerLevel;
+  
+  if(rowsCleared == 4)
+    pointsPerLevel = 1200;
+  else if(rowsCleared == 3)
+    pointsPerLevel = 300;
+  else if(rowsCleared == 2)
+    pointsPerLevel = 100;
+  else if(rowsCleared == 1)
+    pointsPerLevel = 40;
+  else
+    return 0;
+  
+  level += 1;
+  while(level-- > 0)
+    score += pointsPerLevel;
+  
+  return score;
 }
 
 //Wrap, min and max inclusive
