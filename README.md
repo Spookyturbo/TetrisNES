@@ -6,3 +6,4 @@ TetrisNES
 Made for a class at Shawnee State University
 Attempt at partially remaking old school Tetris
 
+<img src="/tetris.png"/>
