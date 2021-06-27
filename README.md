@@ -6,4 +6,4 @@ TetrisNES
 Made for a class at Shawnee State University
 Attempt at partially remaking old school Tetris
 
-<img src="/tetris.png" style="width:200px;height:auto"/>
+<img src="/tetris.png" style="width:100px;height:auto"/>
